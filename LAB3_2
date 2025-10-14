@@ -1,0 +1,83 @@
+import tensorflow as tf
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.utils import to_categorical
+
+# -----------------------------
+# Load CIFAR-10 dataset
+# -----------------------------
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+
+# One-hot encode labels
+y_train = to_categorical(y_train, 10)
+y_test = to_categorical(y_test, 10)
+
+# -----------------------------
+# Preprocessing function
+# -----------------------------
+def preprocess(image, label):
+    image = tf.image.resize(image, [224, 224]) / 255.0  # Resize + Normalize
+    return image, label
+
+# -----------------------------
+# Build Dataset Pipelines
+# -----------------------------
+batch_size = 32
+
+train_ds = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+train_ds = train_ds.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+train_ds = train_ds.shuffle(buffer_size=5000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+test_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test))
+test_ds = test_ds.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+test_ds = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+# -----------------------------
+# Load VGG16 (without top classifier layers)
+# -----------------------------
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+base_model.trainable = True  # Unfreeze whole base model first
+
+# Freeze all layers except last 4 convolutional layers
+for layer in base_model.layers[:-4]:
+    layer.trainable = False
+
+# -----------------------------
+# Build the new model
+# -----------------------------
+model = models.Sequential([
+    base_model,
+    layers.Flatten(),
+    
+    # Dense layers
+    layers.Dense(256, activation='tanh'),
+    layers.Dropout(0.5),
+    layers.Dense(128, activation='elu'),
+    layers.Dropout(0.3),
+    
+    # Output layer
+    layers.Dense(10, activation='softmax')
+])
+
+# -----------------------------
+# Compile the model (lower learning rate for fine-tuning!)
+# -----------------------------
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# -----------------------------
+# Train the model
+# -----------------------------
+history = model.fit(
+    train_ds,
+    epochs=5,
+    validation_data=test_ds
+)
+
+# -----------------------------
+# Evaluate the model
+# -----------------------------
+test_loss, test_accuracy = model.evaluate(test_ds)
+print(f"Test Accuracy after fine-tuning: {test_accuracy:.4f}, Test Loss: {test_loss:.4f}")
