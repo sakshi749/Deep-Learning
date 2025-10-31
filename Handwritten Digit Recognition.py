@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, models
+from tensorflow.keras import layers
 from tensorflow.keras.datasets import mnist
 from tensorflow.keras.utils import to_categorical
 from typing import Tuple
